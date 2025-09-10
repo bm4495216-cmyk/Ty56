@@ -1,0 +1,58 @@
+
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # يفك ضغط أول ملف ZIP يجده في جذر المستودع (مثلاً مساعد.zip أو أي اسم آخر)
+      - name: Unzip project (auto-detect zip)
+        shell: bash
+        run: |
+          ZIP_FILE="$(ls -1 *.zip 2>/dev/null | head -n 1 || true)"
+          if [ -z "$ZIP_FILE" ]; then
+            echo "لم أجد أي ملف ZIP في جذر المستودع." && exit 1
+          fi
+          echo "سأستخدم الملف: $ZIP_FILE"
+          mkdir -p extracted
+          unzip -q "$ZIP_FILE" -d extracted
+          # ابحث عن gradlew داخل المجلد المفكوك
+          GRADLEW_PATH="$(find extracted -type f -name gradlew | head -n 1)"
+          if [ -z "$GRADLEW_PATH" ]; then
+            echo "لم أجد gradlew داخل محتويات الـ ZIP." && exit 1
+          fi
+          echo "GRADLEW_PATH=$GRADLEW_PATH" >> $GITHUB_ENV
+          echo "PROJECT_DIR=$(dirname "$GRADLEW_PATH")" >> $GITHUB_ENV
+
+      - name: Make gradlew executable
+        run: chmod +x "$GRADLEW_PATH"
+
+      - name: Build debug APK
+        run: cd "$PROJECT_DIR" && "$GRADLEW_PATH" assembleDebug
+
+      - name: Collect APKs
+        run: |
+          mkdir -p apks
+          find "$PROJECT_DIR" -type f -name "*.apk" -path "*/outputs/*" -exec cp {} apks/ \;
+
+      - name: Upload APK(s)
+        uses: actions/upload-artifact@v3
+        with:
+          name: app-apk
+          path: apks/*.apk
+
